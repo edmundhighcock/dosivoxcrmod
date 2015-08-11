@@ -17,8 +17,8 @@ Jeweler::Tasks.new do |gem|
   gem.name = "dosivoxcrmod"
   gem.homepage = "http://github.com/edmundhighcock/dosivoxcrmod"
   gem.license = "MIT"
-  gem.summary = %Q{TODO: one-line summary of your gem}
-  gem.description = %Q{TODO: longer description of your gem}
+  gem.summary = %Q{A CodeRunner module for running the luminescence dose modelling software DosiVox}
+  gem.description = %Q{A CodeRunner module for running the luminescence dose modelling software DosiVox}
   gem.email = "edmundhighcock@users.sourceforge.net"
   gem.authors = ["Edmund Highcock"]
   # dependencies defined in Gemfile
