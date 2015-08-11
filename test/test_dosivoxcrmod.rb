@@ -7,11 +7,13 @@ class TestDosivoxcrmod < MiniTest::Test
     FileUtils.makedirs(tfolder)
     File.open("#{tfolder}/dvox_defaults.rb", "w") do |file| 
       file.puts <<EOF
-   @npart = 1
+   @ncopies = 2
+   @npart = 100
+   @detvox = 1636
    @dosivox_location = #{(File.dirname(`which DosiVox`) + '/..').inspect}
    @pilot_file = #{File.expand_path('test/subvox').inspect}
 EOF
     end
-    CodeRunner.submit(Y: tfolder, p: '{}', n: '1', X: `which ruby`.chomp, C: 'dosivox', D: 'dvox')
+    CodeRunner.submit(Y: tfolder, p: '{}', n: '2', X: `which ruby`.chomp, C: 'dosivox', D: 'dvox')
   end
 end
