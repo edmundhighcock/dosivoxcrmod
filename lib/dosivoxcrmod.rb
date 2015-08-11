@@ -21,7 +21,7 @@ class CodeRunner
 
 @code_long = "DosiVox Luminescence Dose Rate Modeller"
 
-@excluded_sub_folders = ['data', 'results']
+@excluded_sub_folders = ['data', 'results', 'copies']
 
 @modlet_required = false
 
@@ -52,20 +52,27 @@ def parameter_string
 end
 
 def generate_input_file
-
+  @ncopies ||= 1
   if @pilot_file and FileTest.exist? @pilot_file
-    text = File.read(@pilot_file)
-    (rcp.substitutions + [:run_name]).each do |sub|
-      eputs Regexp.new(sub.to_s.upcase), sub, send(sub)
-      text.gsub!(Regexp.new(sub.to_s.upcase), send(sub).to_s)
-    end
+    basetext = File.read(@pilot_file)
+    FileUtils.mkdir("copies")
     File.open("driver_script.rb", 'w'){|f| f.puts driver_script}
-    FileUtils.mkdir('data')
-    File.open("data/#@run_name", 'w'){|f| f.puts text}
-    FileUtils.mkdir('results')
-    FileUtils.cp("#@dosivox_location/1run.mac", ".")
-    FileUtils.cp("#@dosivox_location/data/Basic_Materials_List.txt", "data/.")
-    FileUtils.cp_r("#@dosivox_location/data/spectra", "data/.")
+    @ncopies.times.each do |n|
+      text = basetext.dup
+      FileUtils.mkdir("copies/#{n}")
+      Dir.chdir("copies/#{n}") do
+        (rcp.substitutions + [:run_name]).each do |sub|
+          eputs Regexp.new(sub.to_s.upcase), sub, send(sub)
+          text.gsub!(Regexp.new(sub.to_s.upcase), send(sub).to_s)
+        end
+        FileUtils.mkdir('data')
+        File.open("data/#@run_name", 'w'){|f| f.puts text}
+        FileUtils.mkdir('results')
+        FileUtils.ln_s("#@dosivox_location/1run.mac", ".")
+        FileUtils.ln_s("#@dosivox_location/data/Basic_Materials_List.txt", "data/.")
+        FileUtils.ln_s("#@dosivox_location/data/spectra", "data/.")
+      end
+    end
   else
     raise "Please supply pilot_file, the name of the template pilot file. Please give the path of the file as abolute or relative to the run directory"
   end
@@ -74,11 +81,15 @@ end
 def driver_script
   return <<EOF
 
-  IO.popen("#@dosivox_location/build/DosiVox", "r+") do |pipe|
-    pipe.puts "#@run_name\nno"
-    pipe.close_write
-    while line = pipe.gets
-      puts line
+  #@ncopies.times.each do |n|
+    Dir.chdir('copies/' + n.to_s) do
+      IO.popen("#@dosivox_location/build/DosiVox", "r+") do |pipe|
+        pipe.puts "#@run_name\nno"
+        pipe.close_write
+        while line = pipe.gets
+          puts line
+        end
+      end
     end
   end
 
