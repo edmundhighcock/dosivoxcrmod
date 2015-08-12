@@ -30,19 +30,34 @@ class CodeRunner
 
     def process_directory_code_specific
       get_percent_complete
-      if @running
-        @status ||= :Incomplete
+      if @running 
+        if not @status == :Queueing
+          if @percent_complete and @percent_complete < 100.0
+            @status = :Incomplete
+          else
+            @status = :NotStarted
+          end
+        end
       else
-        @status = :Complete
+        if @percent_complete==100.0
+          @status = :Complete
+        else
+          @status = :Failed
+        end
       end
       get_averages if ctd
     end
 
     def get_percent_complete
-      text = File.read('copies/0/output')
-      i = text.size - 1
-      i-=1 while text[i] and text[i]!='%'
-      @percent_complete = text[i-3..i-1].to_f
+      @percentages = @ncopies.times.map do |n|
+        text = File.read("copies/#{n}/output")
+        i = text.size - 1
+        i-=1 while text[i] and text[i]!='%'
+        text[i-3..i-1].to_f
+      end
+      @percent_complete = @percentages.mean
+    rescue
+      @percent_complete = 0.0
     end
 
     def get_averages
@@ -75,7 +90,7 @@ class CodeRunner
     def print_out_line
       line =  sprintf("%d:%d %30s %10s %s", @id, @job_no, @run_name, @status, @nprocs.to_s) 
       line += sprintf(" %3.1f\%", @percent_complete) if @percent_complete
-      line += @averages.map{|name, (val, error)| "#{name}: #{val} +/- #{error} %"}.join(",")
+      line += @material_averages.map{|name, (val, error)| "#{name}: #{val} +/- #{error} %"}.join(",")  if ctd
       line += " -- #@comment" if @comment
       return line
     end
@@ -113,7 +128,8 @@ class CodeRunner
 
     def driver_script
       return <<EOF
-
+  run_info = {}
+  run_info[:start_time] = Time.now.to_i
   nproc = #@nprocs
   #@ncopies.times.each do |n|
     fork do 
@@ -136,6 +152,9 @@ class CodeRunner
     end
   end
   Process.wait
+  run_info[:end_time] = Time.now.to_i
+  run_info[:elapse_mins] = (run_info[:end_time].to_f - run_info[:start_time].to_f)/60.0
+  File.open("run_info.rb", "w"){|f| f.puts run_info.pretty_inspect}
 
 EOF
     end
