@@ -10,7 +10,7 @@ class CodeRunner
 
     @variables = [:pilot_file, :ncopies, :dosivox_location]
 
-    @substitutions = [:npart, :detvox, :concentrations, :emitter, :particle]
+    @substitutions = [:npart, :detvox, :detmat, :concentrations, :emitter, :detector, :particle, :cut, :nprobe]
 
     @variables += @substitutions
 
@@ -39,6 +39,11 @@ class CodeRunner
           end
         end
       else
+        #3.times do
+          #break if @percent_complete == 100.0
+          #get_percent_complete
+          #sleep 2
+        #end
         if @percent_complete==100.0
           @status = :Complete
         else
@@ -50,14 +55,19 @@ class CodeRunner
 
     def get_percent_complete
       @percentages = @ncopies.times.map do |n|
-        text = File.read("copies/#{n}/output")
-        i = text.size - 1
-        i-=1 while text[i] and text[i]!='%'
-        text[i-3..i-1].to_f
+        fname = "copies/#{n}/output"
+        if FileTest.exist? fname
+          text = File.read(fname)
+          i = text.size - 1
+          i-=1 while text[i] and text[i]!='%'
+          text[i-3..i-1].to_f
+        else
+          0.0
+        end
       end
       @percent_complete = @percentages.mean
-    rescue
-      @percent_complete = 0.0
+    #rescue
+      #@percent_complete = 0.0
     end
 
     def get_averages
@@ -74,9 +84,9 @@ class CodeRunner
             lines.each do |l|
               _id, name, nsvox, _dens, _water_content, em_mass, dose, error = l.scanf("%d %s %d %f %f %f %f %f")
               p 'line is ', l
-              @material_results[n][name] = [dose/em_mass, error/em_mass, Math.sqrt(error/em_mass/nsvox.to_f)]
+              @material_results[n][name] = [dose/em_mass, error/em_mass, Math.sqrt(error/em_mass/nsvox.to_f)].map{|f| f*100.0}
               @material_averages[name] ||= []
-              @material_averages[name].push [dose/em_mass, Math.sqrt(error/em_mass/nsvox.to_f)]
+              @material_averages[name].push [dose/em_mass, Math.sqrt(error/em_mass/nsvox.to_f)].map{|f| f*100.0}
             end
           end
         end
@@ -99,6 +109,29 @@ class CodeRunner
       "driver_script.rb"
     end
 
+    def substitute_value(sub)
+      case sub
+      when :particle
+        case send(sub)
+        when :a, 1; '1'
+        when :b, 2; '2'
+        when :g, 3; '3'
+        end
+      when :emitter
+        case send(sub)
+        when :U, 1; '1'
+        when :Th,2; '2'
+        when :K, 3; '3'
+        end
+      when :detector
+        case send(sub)
+        when :Probe, 0; '0'
+        when :Sub, 1; '1'
+        end
+      else
+        send(sub).to_s
+      end
+    end
     def generate_input_file
       @ncopies ||= 1
       if @pilot_file and FileTest.exist? @pilot_file
@@ -110,8 +143,10 @@ class CodeRunner
           FileUtils.mkdir("copies/#{n}")
           Dir.chdir("copies/#{n}") do
             (rcp.substitutions + [:run_name]).each do |sub|
-              eputs Regexp.new(sub.to_s.upcase), sub, send(sub)
-              text.gsub!(Regexp.new(sub.to_s.upcase), send(sub).to_s)
+              #eputs Regexp.new(sub.to_s.upcase), sub, send(sub)
+              s = substitute_value(sub)
+              raise "Bad value for #{sub}: #{s.inspect}" unless s and s.kind_of? String
+              text.gsub!(Regexp.new(sub.to_s.upcase), s)
             end
             FileUtils.mkdir('data')
             File.open("data/#@run_name", 'w'){|f| f.puts text}
@@ -128,21 +163,17 @@ class CodeRunner
 
     def driver_script
       return <<EOF
+  require 'pp'
+  sleep 4
   run_info = {}
   run_info[:start_time] = Time.now.to_i
   nproc = #@nprocs
   #@ncopies.times.each do |n|
     fork do 
       Dir.chdir('copies/' + n.to_s) do
-        IO.popen(%[#@dosivox_location/build/DosiVox > output 2>error], "r+") do |pipe|
+        IO.popen(%[#@dosivox_location/build/DosiVox > output 2>error], "w") do |pipe|
           pipe.puts "#@run_name\nno"
           pipe.close_write
-          while ch = pipe.getc
-            print ch
-            if ch == "%"
-               puts
-            end
-          end
         end
       end
     end
@@ -151,7 +182,8 @@ class CodeRunner
       Process.wait
     end
   end
-  Process.wait
+  Process.waitall
+  sleep 2 # Allows IO to complete
   run_info[:end_time] = Time.now.to_i
   run_info[:elapse_mins] = (run_info[:end_time].to_f - run_info[:start_time].to_f)/60.0
   File.open("run_info.rb", "w"){|f| f.puts run_info.pretty_inspect}

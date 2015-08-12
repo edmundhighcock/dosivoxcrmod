@@ -8,8 +8,14 @@ class TestDosivoxcrmod < MiniTest::Test
     File.open("#{tfolder}/dvox_defaults.rb", "w") do |file| 
       file.puts <<EOF
    @ncopies = 2
-   @npart = 100
+   @npart = 50
    @detvox = 1636
+   @detmat = -1
+   @cut = 0.01
+   @nprobe = 7
+   @emitter = :U
+   @particle = :a
+   @detector = 1
    @dosivox_location = #{(File.dirname(`which DosiVox`) + '/..').inspect}
    @pilot_file = #{File.expand_path('test/subvox').inspect}
 EOF
