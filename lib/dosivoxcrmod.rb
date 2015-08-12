@@ -8,9 +8,9 @@ class CodeRunner
 
     @code_module_folder = File.expand_path(File.dirname(__FILE__))
 
-    @variables = [:pilot_file, :ncopies, :dosivox_location]
+    @variables = [:pilot_file, :ncopies, :dosivox_location, :concentrations]
 
-    @substitutions = [:npart, :detvox, :detmat, :concentrations, :emitter, :detector, :particle, :cut, :nprobe]
+    @substitutions = [:npart, :detvox, :detmat, :emitter, :detector, :particle, :cut, :nprobe, :nvx, :nvy, :nvz, :nsvx, :nsvy, :nsvz]
 
     @variables += @substitutions
 
@@ -132,6 +132,61 @@ class CodeRunner
         send(sub).to_s
       end
     end
+    def substitute_variables(text)
+      (rcp.substitutions + [:run_name]).each do |sub|
+        #eputs Regexp.new(sub.to_s.upcase), sub, send(sub)
+        s = substitute_value(sub)
+        raise "Bad value for #{sub}: #{s.inspect}" unless s and s.kind_of? String
+        text.gsub!(Regexp.new(sub.to_s.upcase), s)
+      end
+    end
+    def substitute_concentrations(text)
+      #regex = Regexp.new("(?<voxelarray>(?:(?:(?:[\\d\\s]+){#@nvx}\\s*[\\n\\r]){#@nvy}\\s*[\\n\\r]){#@nvz})")
+      #regex = Regexp.new("(?<voxelarray>(?:(?:(?:[\\d\\s]+){#@nvx}\\s*[\\n\\r]){1}\\s*[\\n\\r]){1})")
+      voxelregex = Regexp.new("
+        MEDIUM\\s+COMPOSITION.*[\\n\\r]+
+        (?<voxelarray>
+         (?:
+           (?:
+             [\\d \\t]+[\\n\\r]+
+           ){#@nvy}\\s*[\\n\\r]
+         ){#@nvz}
+        )
+       ", Regexp::EXTENDED)
+      subvoxelregex = Regexp.new("
+        VOXEL\\s+COMPOSITION.*[\\n\\r]+
+        (?<subvoxelarray>
+         (?:
+           (?:
+             [\\d \\t]+[\\n\\r]+
+           ){#@nsvy}\\s*[\\n\\r]
+         ){#@nsvz}
+        )
+       ", Regexp::EXTENDED)
+      #p 'regex', voxelregex
+      text =~ voxelregex
+      voxelarray = $~[:voxelarray]
+      text =~ subvoxelregex
+      subvoxelarray = $~ ? $~[:subvoxelarray] : nil
+      #p 'match is ', $~
+
+      str = "abcdghijklmnopqrstuvwxyzABCDGHIJKLMN"
+      # We substitute the letters first because there can be no
+      # letter apart from e or f in the concentrations
+      # so there are no unwanted double substitutions
+      @concentrations.keys.each do |i|
+        voxelarray.gsub!(Regexp.new("\\b#{i}\\b"), str[i])
+        subvoxelarray.gsub!(Regexp.new("\\b#{i}\\b"), str[i]) if subvoxelarray
+      end
+      @concentrations.keys.each do |i|
+        voxelarray.gsub!(Regexp.new("\\b#{str[i]}\\b"), @concentrations[i][@emitter].to_s)
+        subvoxelarray.gsub!(Regexp.new("\\b#{str[i]}\\b"), @concentrations[i][@emitter].to_s ) if subvoxelarray
+      end
+      #p subvoxelarray
+      text.sub!(/^VOXEL_CONCENTRATIONS[\n\r]{2}/, voxelarray.sub(/\r?\n\r?\n\Z/, ''))
+      text.sub!(/^SUBVOXEL_CONCENTRATIONS[\n\r]{2}/, subvoxelarray)
+    end
+
     def generate_input_file
       @ncopies ||= 1
       if @pilot_file and FileTest.exist? @pilot_file
@@ -142,12 +197,8 @@ class CodeRunner
           text = basetext.dup
           FileUtils.mkdir("copies/#{n}")
           Dir.chdir("copies/#{n}") do
-            (rcp.substitutions + [:run_name]).each do |sub|
-              #eputs Regexp.new(sub.to_s.upcase), sub, send(sub)
-              s = substitute_value(sub)
-              raise "Bad value for #{sub}: #{s.inspect}" unless s and s.kind_of? String
-              text.gsub!(Regexp.new(sub.to_s.upcase), s)
-            end
+            substitute_variables(text)
+            substitute_concentrations(text)
             FileUtils.mkdir('data')
             File.open("data/#@run_name", 'w'){|f| f.puts text}
             FileUtils.mkdir('results')
