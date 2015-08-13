@@ -188,8 +188,8 @@ class CodeRunner
         subvoxelarray.gsub!(Regexp.new("\\b#{str[i]}\\b"), @concentrations[i][@emitter].to_s ) if subvoxelarray
       end
       #p subvoxelarray
-      text.sub!(/^VOXEL_CONCENTRATIONS[\n\r]{2}/, voxelarray.sub(/\r?\n\r?\n\Z/, ''))
-      text.sub!(/^SUBVOXEL_CONCENTRATIONS[\n\r]{2}/, subvoxelarray)
+      text.sub!(/^VOXEL_CONCENTRATIONS[\n\r]{1}/, voxelarray.sub(/\r?\n\r?\n\Z/, ''))
+      text.sub!(/^SUBVOXEL_CONCENTRATIONS[\n\r]{1}/, subvoxelarray)
     end
 
     def generate_input_file

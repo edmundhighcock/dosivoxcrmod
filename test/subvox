@@ -215,7 +215,6 @@ NVX      NVY     NVZ  # voxels number along X,Y and Z axes
 2 1 1 1 1 1 1 1 1 1 1 1 1 1 2
 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2
 
-
 ### Cartography of U, Th or K for the external medium :
 
 VOXEL_CONCENTRATIONS
