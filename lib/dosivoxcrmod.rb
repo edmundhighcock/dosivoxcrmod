@@ -50,7 +50,10 @@ class CodeRunner
           @status = :Failed
         end
       end
-      get_averages if ctd
+      get_averages if @percentages.find{|f| f==100.0}
+      if FileTest.exist?('run_info.rb')
+        @run_time = eval(File.read('run_info.rb'))[:elapse_mins]
+      end
     end
 
     def get_percent_complete
@@ -74,6 +77,7 @@ class CodeRunner
       @material_averages = {}
       @material_results = {}
       @ncopies.times.each do |n|
+        next unless @percentages[n] == 100.0
         @material_results[n] = {}
         Dir.chdir("copies/#{n}") do
           case @detector
@@ -100,7 +104,8 @@ class CodeRunner
     def print_out_line
       line =  sprintf("%d:%d %30s %10s %s", @id, @job_no, @run_name, @status, @nprocs.to_s) 
       line += sprintf(" %3.1f\%", @percent_complete) if @percent_complete
-      line += @material_averages.map{|name, (val, error)| "#{name}: #{val} +/- #{error} %"}.join(",")  if ctd
+      line += sprintf(" %d mins ", @run_time) if @run_time
+      line += @material_averages.map{|name, (val, error)| "#{name}: #{val} +/- #{error} %"}.join(",")  if @material_averages
       line += " -- #@comment" if @comment
       return line
     end
@@ -202,6 +207,7 @@ class CodeRunner
             FileUtils.mkdir('data')
             File.open("data/#@run_name", 'w'){|f| f.puts text}
             FileUtils.mkdir('results')
+            FileUtils.mkdir('results/DoseMapping')
             FileUtils.ln_s("#@dosivox_location/1run.mac", ".")
             FileUtils.ln_s("#@dosivox_location/data/Basic_Materials_List.txt", "data/.")
             FileUtils.ln_s("#@dosivox_location/data/spectra", "data/.")
