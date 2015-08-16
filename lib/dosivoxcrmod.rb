@@ -188,8 +188,8 @@ class CodeRunner
         subvoxelarray.gsub!(Regexp.new("\\b#{str[i]}\\b"), @concentrations[i][@emitter].to_s ) if subvoxelarray
       end
       #p subvoxelarray
-      text.sub!(/^VOXEL_CONCENTRATIONS[\n\r]{1}/, voxelarray.sub(/\r?\n\r?\n\Z/, ''))
-      text.sub!(/^SUBVOXEL_CONCENTRATIONS[\n\r]{1}/, subvoxelarray)
+      text.sub!(/^VOXEL_CONCENTRATIONS/, voxelarray.sub(/\r\n\r\n\Z/, ''))
+      text.sub!(/^SUBVOXEL_CONCENTRATIONS/, subvoxelarray.sub(/\r\n\Z/, '')) if subvoxelarray
     end
 
     def generate_input_file
@@ -204,6 +204,9 @@ class CodeRunner
           Dir.chdir("copies/#{n}") do
             substitute_variables(text)
             substitute_concentrations(text)
+            raise "Extra new line in pilot file" if text =~ /(\r\n){3}/
+            raise "Line ending error" if text =~ /[^\r]\n/ # Files should have DOS line endings
+
             FileUtils.mkdir('data')
             File.open("data/#@run_name", 'w'){|f| f.puts text}
             FileUtils.mkdir('results')
@@ -234,6 +237,7 @@ class CodeRunner
         end
       end
     end
+    sleep 2 # Ensure the RNG is seeded differently
     if n%nproc == nproc-1
       puts "Waiting .. " + n.to_s 
       Process.wait
