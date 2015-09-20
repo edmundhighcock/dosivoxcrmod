@@ -12,6 +12,8 @@ class CodeRunner
 
     @substitutions = [:npart, :detvox, :detmat, :emitter, :detector, :particle, :cut, :nprobe, :nvx, :nvy, :nvz, :nsvx, :nsvy, :nsvz]
 
+    @material_substitutions = [:density]
+
     @variables += @substitutions
 
     @naming_pars = []
@@ -144,6 +146,13 @@ class CodeRunner
         raise "Bad value for #{sub}: #{s.inspect}" unless s and s.kind_of? String
         text.gsub!(Regexp.new(sub.to_s.upcase), s)
       end
+      (rcp.material_substitutions ).each do |sub|
+        @concentrations.keys.each do |k|
+          s = @concentrations[k][sub]
+          next unless s
+          text.gsub!(Regexp.new(sub.to_s.upcase + '_' + k.to_s), s.to_s)
+        end
+      end
     end
     def substitute_concentrations(text)
       #regex = Regexp.new("(?<voxelarray>(?:(?:(?:[\\d\\s]+){#@nvx}\\s*[\\n\\r]){#@nvy}\\s*[\\n\\r]){#@nvz})")
@@ -250,6 +259,11 @@ class CodeRunner
   File.open("run_info.rb", "w"){|f| f.puts run_info.pretty_inspect}
 
 EOF
+    end
+    
+    def accumulated_mean(materialname)
+      similar_runs = @runner.run_list.values.find_all{|r| (rcp.variables - [:npart, :ncopies]).inject(true){|b,v|  b && (send(v) == r.send(v))}}
+      similar_runs.map{|r| r.material_averages[material_averages][0] * r.npar}.sum/similar_runs.map{|r| r.npart}.sum
     end
 
     def parameter_transition(run)

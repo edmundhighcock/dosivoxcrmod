@@ -18,7 +18,7 @@ NPROBE 1  50. 50.  #number of probe cells, probe diam (mm), probe offset in X an
 
 0   # material index
 Clay    # material name
-1.8    # dry density (g/cm3)
+DENSITY_0    # dry density (g/cm3)
 3   # water content, % of dry mass
 11   # number of components
 1 60 2 15 9 10 11 2.5 12 4 13 2 14 2 18 1.5 19 0.5 16 1.5 20 1     #  component index, % of dry mass
@@ -81,7 +81,7 @@ ClayBase    # material name
 0.05 30
 
 NVX      NVY     NVZ  # voxels number along X,Y and Z axes
-30     30     30  #voxels size along X,Y and Z axes (mm)
+300     300     300  #voxels size along X,Y and Z axes (mm)
 
 ### MEDIUM COMPOSITION - cartography of materials with their index
 

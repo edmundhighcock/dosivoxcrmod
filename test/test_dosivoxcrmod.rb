@@ -20,7 +20,7 @@ class TestDosivoxcrmod < MiniTest::Test
    @nsvx = 30; @nsvy = 30; @nsvz = 30;
    @concentrations = {
     0 => # Clay
-      { U: 1.77 },
+      { U: 1.77, density: 1.6 },
     1 => # Fill
       { U: 1.51 },
     2 => # Gebel
