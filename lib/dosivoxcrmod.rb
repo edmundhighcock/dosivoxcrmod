@@ -154,10 +154,8 @@ class CodeRunner
         end
       end
     end
-    def substitute_concentrations(text)
-      #regex = Regexp.new("(?<voxelarray>(?:(?:(?:[\\d\\s]+){#@nvx}\\s*[\\n\\r]){#@nvy}\\s*[\\n\\r]){#@nvz})")
-      #regex = Regexp.new("(?<voxelarray>(?:(?:(?:[\\d\\s]+){#@nvx}\\s*[\\n\\r]){1}\\s*[\\n\\r]){1})")
-      voxelregex = Regexp.new("
+    def voxel_regex
+      Regexp.new("
         MEDIUM\\s+COMPOSITION.*[\\n\\r]+
         (?<voxelarray>
          (?:
@@ -167,6 +165,11 @@ class CodeRunner
          ){#@nvz}
         )
        ", Regexp::EXTENDED)
+    end
+    
+    def substitute_concentrations(text)
+      #regex = Regexp.new("(?<voxelarray>(?:(?:(?:[\\d\\s]+){#@nvx}\\s*[\\n\\r]){#@nvy}\\s*[\\n\\r]){#@nvz})")
+      #regex = Regexp.new("(?<voxelarray>(?:(?:(?:[\\d\\s]+){#@nvx}\\s*[\\n\\r]){1}\\s*[\\n\\r]){1})")
       subvoxelregex = Regexp.new("
         VOXEL\\s+COMPOSITION.*[\\n\\r]+
         (?<subvoxelarray>
@@ -203,31 +206,36 @@ class CodeRunner
 
     def generate_input_file
       @ncopies ||= 1
+      FileUtils.mkdir("copies")
+      File.open("driver_script.rb", 'w'){|f| f.puts driver_script}
+      basetext = pilot_file_text
+      @ncopies.times.each do |n|
+        text = basetext.dup
+        FileUtils.mkdir("copies/#{n}")
+        Dir.chdir("copies/#{n}") do
+          substitute_variables(text)
+          substitute_concentrations(text)
+          raise "Extra new line in pilot file" if text =~ /(\r\n){3}/
+          raise "Line ending error" if text =~ /[^\r]\n/ # Files should have DOS line endings
+
+          FileUtils.mkdir('data')
+          File.open("data/#@run_name", 'w'){|f| f.puts text}
+          FileUtils.mkdir('results')
+          FileUtils.mkdir('results/DoseMapping')
+          FileUtils.ln_s("#@dosivox_location/1run.mac", ".")
+          FileUtils.ln_s("#@dosivox_location/data/Basic_Materials_List.txt", "data/.")
+          FileUtils.ln_s("#@dosivox_location/data/spectra", "data/.")
+        end
+      end
+    end
+
+    def pilot_file_text
       if @pilot_file and FileTest.exist? @pilot_file
         basetext = File.read(@pilot_file)
-        FileUtils.mkdir("copies")
-        File.open("driver_script.rb", 'w'){|f| f.puts driver_script}
-        @ncopies.times.each do |n|
-          text = basetext.dup
-          FileUtils.mkdir("copies/#{n}")
-          Dir.chdir("copies/#{n}") do
-            substitute_variables(text)
-            substitute_concentrations(text)
-            raise "Extra new line in pilot file" if text =~ /(\r\n){3}/
-            raise "Line ending error" if text =~ /[^\r]\n/ # Files should have DOS line endings
-
-            FileUtils.mkdir('data')
-            File.open("data/#@run_name", 'w'){|f| f.puts text}
-            FileUtils.mkdir('results')
-            FileUtils.mkdir('results/DoseMapping')
-            FileUtils.ln_s("#@dosivox_location/1run.mac", ".")
-            FileUtils.ln_s("#@dosivox_location/data/Basic_Materials_List.txt", "data/.")
-            FileUtils.ln_s("#@dosivox_location/data/spectra", "data/.")
-          end
-        end
       else
         raise "Please supply pilot_file, the name of the template pilot file. Please give the path of the file as abolute or relative to the run directory"
       end
+      return basetext
     end
 
     def driver_script
@@ -273,8 +281,111 @@ EOF
 
     end
 
+    def add_data(data, x, y, z, material) 
+      data[0].push x
+      data[1].push y
+      data[2].push z
+      data[3].push material
+    end
+
+    def showlayers(options)
+      Dir.chdir(@directory) do
+        pilot_file_text =~ voxel_regex
+        voxels = $~[:voxelarray]
+        #p voxels
+        layers = voxels.split(/\r?\n\r?\n/)
+        layer_data = []
+        sx = sy = 30
+        sz = 15
+        dx = dy = 5
+        dz = 40
+        x = y = z = 0
+        layers.each do |layer|
+          data = [[], [], [], []]
+          x0 = [[], [], [], []]
+          x1 = [[], [], [], []]
+          y0 = [[], [], [], []]
+          y1 = [[], [], [], []]
+          #layer_data.push(x0)
+          #layer_data.push(x1)
+          #layer_data.push(y0)
+          #layer_data.push(y1)
+          blank = [NIL]*4
+          layer_data.push data
+          2.times do
+            y = 0
+            rows = layer.split(/\r?\n/)
+            for i in 0...rows.size do
+              row = rows[i]
+              2.times do 
+                x = 0
+                voxels = row.split(/ /)
+                for j in 0...voxels.size do
+                  material = voxels[j]
+                  2.times do
+                    add_data(data,x,y,z,material)
+                    add_data(y0,x,y,z,material) if i == 0
+                    add_data(y1,x,y,z,material) if i == rows.size
+                    add_data(x0,x,y,z,material) if j == 0
+                    add_data(x1,x,y,z,material) if j == voxels.size
+                    x+=sx
+                    j = j + 1
+                  end
+                  x = x - sx + dx
+                end
+                add_data(y0, *blank) if i == 0
+                add_data(y1, *blank) if i == rows.size 
+                add_data(data, *blank)
+                y += sy
+                i = i + 1
+              end
+              y = y - sy + dy
+            end 
+            add_data(x0, *blank) 
+            add_data(x1, *blank) 
+            z += sz
+          end
+          z = z - sz + dz
+        end
+        #$debug_gnuplot = true
+        #pp layer_data
+        gk = GraphKit.quick_create(*layer_data)
+        gk.data.each do |dk|
+          dk.gp.with = 'pm3d'
+        end
+        gk2 = GraphKit.quick_create(*layer_data)
+        gk2.data.each do |dk|
+          dk.gp.with = 'p pointsize 0.1 linecolor "black" pt 1'
+        end
+        gk.gp.view = "equal xyz" #",,1,1"
+        gk.gp.key = "off"
+        gk.gp.xtics = gk.gp.ytics = gk.gp.ztics = "unset"
+        gk.gp.xlabel = gk.gp.ylabel = gk.gp.zlabel = "unset"
+        gk.gp.colorbox = "unset"
+
+        nmaterials = 3
+        colours = {1 => "black",
+                   2 => "brown",
+                   3 => "white"
+        }
+        colours = nmaterials.times.map do |i|
+          #value = (i).to_f / (nmaterials - 1).to_f
+          "#{i} \"#{colours[i+1]}\""
+        end
+        p gk.gp.palette = "defined (#{colours.join(", ")})"
+        gk.gp.xyplane = "at 0"
+        gk.gp.border = "unset"
+        gk.gp.pm3d = "depthorder hidden3d 1"
+        #gk.gp.pm3d = "depthorder"
+        gk = gk #+ gk2
+        return gk
+      end
+    end
+
     def graphkit(name, options)
       case name
+      when 'showlayers'
+        return showlayers(options)
       when 'empty'
       else
         raise 'Unknown graph'
