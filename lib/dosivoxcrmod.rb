@@ -166,11 +166,9 @@ class CodeRunner
         )
        ", Regexp::EXTENDED)
     end
-    
-    def substitute_concentrations(text)
-      #regex = Regexp.new("(?<voxelarray>(?:(?:(?:[\\d\\s]+){#@nvx}\\s*[\\n\\r]){#@nvy}\\s*[\\n\\r]){#@nvz})")
-      #regex = Regexp.new("(?<voxelarray>(?:(?:(?:[\\d\\s]+){#@nvx}\\s*[\\n\\r]){1}\\s*[\\n\\r]){1})")
-      subvoxelregex = Regexp.new("
+
+    def subvoxel_regex
+      Regexp.new("
         VOXEL\\s+COMPOSITION.*[\\n\\r]+
         (?<subvoxelarray>
          (?:
@@ -180,6 +178,12 @@ class CodeRunner
          ){#@nsvz}
         )
        ", Regexp::EXTENDED)
+    end
+    
+    def substitute_concentrations(text)
+      #regex = Regexp.new("(?<voxelarray>(?:(?:(?:[\\d\\s]+){#@nvx}\\s*[\\n\\r]){#@nvy}\\s*[\\n\\r]){#@nvz})")
+      #regex = Regexp.new("(?<voxelarray>(?:(?:(?:[\\d\\s]+){#@nvx}\\s*[\\n\\r]){1}\\s*[\\n\\r]){1})")
+      subvoxelregex = subvoxel_regex
       #p 'regex', voxelregex
       text =~ voxelregex
       voxelarray = $~[:voxelarray]
@@ -288,64 +292,138 @@ EOF
       data[3].push material
     end
 
-    def showlayers(options)
+    def showlayers(options={})
       Dir.chdir(@directory) do
-        pilot_file_text =~ voxel_regex
-        voxels = $~[:voxelarray]
+        subvoxels = options[:subvoxels] ? true : false
+        voxels = case subvoxels
+                 when true
+                   pilot_file_text =~ subvoxel_regex
+                   $~[:subvoxelarray]
+                 else
+                   pilot_file_text =~ voxel_regex
+                   $~[:voxelarray]
+                 end
         #p voxels
         layers = voxels.split(/\r?\n\r?\n/)
         layer_data = []
-        sx = sy = 30
-        sz = 15
-        dx = dy = 5
-        dz = 40
-        x = y = z = 0
-        layers.each do |layer|
-          data = [[], [], [], []]
-          x0 = [[], [], [], []]
-          x1 = [[], [], [], []]
-          y0 = [[], [], [], []]
-          y1 = [[], [], [], []]
-          #layer_data.push(x0)
-          #layer_data.push(x1)
-          #layer_data.push(y0)
-          #layer_data.push(y1)
-          blank = [NIL]*4
-          layer_data.push data
-          2.times do
-            y = 0
-            rows = layer.split(/\r?\n/)
-            for i in 0...rows.size do
-              row = rows[i]
-              2.times do 
-                x = 0
-                voxels = row.split(/ /)
-                for j in 0...voxels.size do
-                  material = voxels[j]
-                  2.times do
-                    add_data(data,x,y,z,material)
-                    add_data(y0,x,y,z,material) if i == 0
-                    add_data(y1,x,y,z,material) if i == rows.size
-                    add_data(x0,x,y,z,material) if j == 0
-                    add_data(x1,x,y,z,material) if j == voxels.size
-                    x+=sx
-                    j = j + 1
-                  end
-                  x = x - sx + dx
-                end
-                add_data(y0, *blank) if i == 0
-                add_data(y1, *blank) if i == rows.size 
-                add_data(data, *blank)
-                y += sy
-                i = i + 1
-              end
-              y = y - sy + dy
-            end 
-            add_data(x0, *blank) 
-            add_data(x1, *blank) 
-            z += sz
+        basefac = 0.0
+        fac = 0.0
+        upperfac = 0.0
+        if options[:f_index]
+          basefac = fac = options[:f_index].to_f / 100.0
+          if subvoxels
+            upperfac = [1.0, fac].min
+            fac = [0.0, fac-1.0].max
+          else
+            fac = [1.0, fac].min
           end
-          z = z - sz + dz
+        else
+          fac = 1.0
+        end
+        subvoxel = [1, 1, 1] 
+        subvoxel_mins = [0, 0, 0]
+        subvoxel_maxes = [0, 0, 0]
+        sx = sy = subvoxels ? 1 : 30
+        sz = subvoxels ? 1 : 15
+        dx = dy = subvoxels ? 1*fac : 10 * fac
+        dz = subvoxels ? 4 * fac : 60 * fac
+        xstart = ystart = zstart = 0
+        puts(upperfac)
+        xstart = ystart = -30.0 / 2
+        zstart = -15.0 / 2
+        if not subvoxels
+          xstart = xstart - subvoxel[0] * (30.0 + 10.0 * fac) 
+          ystart = ystart - subvoxel[1] * (30.0 + 10.0 * fac)
+          zstart = zstart - subvoxel[2] * (15.0 + 40.0 * fac)
+        end
+        minfac = 4.0
+        zmin = -sz * minfac + zstart
+        xmin = -sx * minfac + xstart
+        ymin = -sy * minfac + ystart
+        zmax = xmax = ymax = 0
+        maxfac = 3
+        #for zi in 0...layers.size do
+        z = zstart
+        for zi in 0...layers.size do
+          layer = layers[zi]
+          blank = [NIL]*4
+          y = ystart
+          rows = layer.split(/\r?\n/)
+          #for i in 0...rows.size do
+          for i in 0...2 do
+            row = rows[i]
+              x = xstart
+              voxels = row.split(/ /)
+              #for j in 0...voxels.size do
+              for j in 0...2 do
+                material = voxels[j]
+                if subvoxels or not [j, i, zi] == subvoxel
+                  data = [[], [], [], []]
+                  layer_data.push data
+                  add_data(data,x,y,z,material)
+                  add_data(data,x+sx,y,z,material)
+                  add_data(data,*blank)
+                  add_data(data,x,y+sy,z,material)
+                  add_data(data,x+sx,y+sy,z,material)
+                  if true or subvoxels
+                    data = [[], [], [], []]
+                    layer_data.push data
+                    add_data(data,x,y,z+sz,material)
+                    add_data(data,x+sx,y,z+sz,material)
+                    add_data(data,*blank)
+                    add_data(data,x,y+sy,z+sz,material)
+                    add_data(data,x+sx,y+sy,z+sz,material)
+                    data = [[], [], [], []]
+                    layer_data.push data
+                    add_data(data,x,y,z,material)
+                    add_data(data,x,y+sy,z,material)
+                    add_data(data,*blank)
+                    add_data(data,x,y,z+sz,material)
+                    add_data(data,x,y+sy,z+sz,material)
+                    data = [[], [], [], []]
+                    layer_data.push data
+                    add_data(data,x+sx,y,z,material)
+                    add_data(data,x+sx,y+sy,z,material)
+                    add_data(data,*blank)
+                    add_data(data,x+sx,y,z+sz,material)
+                    add_data(data,x+sx,y+sy,z+sz,material)
+                    data = [[], [], [], []]
+                    layer_data.push data
+                    add_data(data,x,y,z,material)
+                    add_data(data,x+sx,y,z,material)
+                    add_data(data,*blank)
+                    add_data(data,x,y,z+sz,material)
+                    add_data(data,x+sx,y,z+sz,material)
+                    data = [[], [], [], []]
+                    layer_data.push data
+                    add_data(data,x,y+sy,z,material)
+                    add_data(data,x+sx,y+sy,z,material)
+                    add_data(data,*blank)
+                    add_data(data,x,y+sy,z+sz,material)
+                    add_data(data,x+sx,y+sy,z+sz,material)
+                  end
+                end
+                if not subvoxels and j == subvoxel[0]
+                  subvoxel_mins[0] = x
+                  subvoxel_maxes[0] = x + sx
+                end
+                x = x + sx + dx
+                xmax = x * maxfac
+              end
+            if not subvoxels and i == subvoxel[1]
+              subvoxel_mins[1] = y
+              subvoxel_maxes[1] = y + sy
+            end
+            y = y + sy + dy
+            ymax = y * maxfac
+          end 
+          if not subvoxels and zi == subvoxel[2]
+            subvoxel_mins[2] = z
+            subvoxel_maxes[2] = z + sz
+          end
+          z = z + sz + dz
+          zmax = z * maxfac
+          #break
         end
         #$debug_gnuplot = true
         #pp layer_data
@@ -353,29 +431,76 @@ EOF
         gk.data.each do |dk|
           dk.gp.with = 'pm3d'
         end
-        gk2 = GraphKit.quick_create(*layer_data)
-        gk2.data.each do |dk|
-          dk.gp.with = 'p pointsize 0.1 linecolor "black" pt 1'
-        end
-        gk.gp.view = "equal xyz" #",,1,1"
+        #gk2 = GraphKit.quick_create(*layer_data)
+        #gk2.data.each do |dk|
+          #dk.gp.with = 'p pointsize 0.1 linecolor "black" pt 1'
+        #end
+        gk.gp.view = [
+          "equal xyz", #",,1,1"
+          "60,#{20.0 + 10.0*basefac},,"
+        ]
         gk.gp.key = "off"
-        gk.gp.xtics = gk.gp.ytics = gk.gp.ztics = "unset"
+        #gk.gp.xtics = gk.gp.ytics = gk.gp.ztics = "unset"
         gk.gp.xlabel = gk.gp.ylabel = gk.gp.zlabel = "unset"
         gk.gp.colorbox = "unset"
-
-        nmaterials = 3
-        colours = {1 => "black",
-                   2 => "brown",
-                   3 => "white"
-        }
-        colours = nmaterials.times.map do |i|
-          #value = (i).to_f / (nmaterials - 1).to_f
-          "#{i} \"#{colours[i+1]}\""
+        gk.gp.size  = "2,2"
+        gk.gp.origin = "-0.5,-0.5"
+        gk.gp.zeroaxis = ""
+        #gk.gp.zzeroaxis = "set"
+        gk.gp.style = [
+          "line 1 linecolor \"black\""
+        ]
+        margin = 0.5
+        if not subvoxels
+          gk.xrange = [xmin * (1.0-fac) + (subvoxel_mins[0]-dx*margin) * fac, 
+                       xmax * (1.0-fac) + (subvoxel_maxes[0]+dx*margin) * fac
+          ]
+          gk.yrange = [ymin * (1.0-fac) + (subvoxel_mins[1]-dy*margin) * fac, 
+                       ymax * (1.0-fac) + (subvoxel_maxes[1]+dy*margin) * fac
+          ]
+          gk.zrange = [zmin * (1.0-fac) + (subvoxel_mins[2]-dz*margin) * fac, 
+                       zmax * (1.0-fac) + (subvoxel_maxes[2]+dz*margin) * fac
+          ]
+          #gk.xrange = [xmin, 
+                       #xmax
+          #]
+          #gk.yrange = [ymin, 
+                       #ymax
+          #]
+          #gk.zrange = [zmin, 
+                       #zmax
+          #]
+          p ["MINS", zmin, subvoxel_mins[2], gk.zrange[0]]
         end
+
+      
+
+        nmaterials = 4
+        colours = {0 => "#8e1f00",
+                   1 => "#7f6c4d",
+                   2 => "#835613",
+                   3 => "#FFFFFF"
+        }
+        #colours = {0 => "slategrey",
+                   #1 => "tan1",
+                   #2 => "sandybrown",
+                   #3 => "skyblue"
+        #}
+        colours = nmaterials.times.map do |ic|
+          #value = (i).to_f / (nmaterials - 1).to_f
+          "#{ic} \"#{colours[ic]}\""
+        end
+        gk.gp.cbrange = "[0:#{nmaterials-1}]"
         p gk.gp.palette = "defined (#{colours.join(", ")})"
         gk.gp.xyplane = "at 0"
-        gk.gp.border = "unset"
+        #gk.gp.border = "unset"
         gk.gp.pm3d = "depthorder hidden3d 1"
+        gk.tile = nil
+        gk.xlabel = nil
+        gk.ylabel = nil
+        gk.zlabel = nil
+        gk.title = nil
+
         #gk.gp.pm3d = "depthorder"
         gk = gk #+ gk2
         return gk
